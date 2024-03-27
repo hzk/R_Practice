@@ -1,0 +1,1115 @@
+---
+title: "DM8101FinalExam"
+author: "ZhongKai han"
+format: html
+editor: visual
+---
+
+## Quarto
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+## Running Code
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+```{r}
+1 + 1
+```
+
+You can add options to executable code like this
+
+```{r}
+#| echo: false
+2 * 2
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
+## excel相关操作 and tools
+```{r}
+handle_error <- function(expr) {
+  result <- tryCatch(
+    {
+      expr
+    },
+    error = function(e) {
+      message("发生错误,但继续执行：", conditionMessage(e))
+      return(NA)
+    }
+  )
+  return(result)
+}
+saveExcel <- function(data,sheetname,fileName=NULL){
+  library(openxlsx)
+  #library(xlsx)
+  if (!is.null(fileName)) {
+    excel_file <- fileName
+  }else{
+    excel_file <- "analysisResult.xlsx"
+  }
+  # 检查文件是否存在
+  if (!file.exists(excel_file)) {
+    # 如果文件不存在，则创建一个新的 Excel 工作簿
+    wb <- createWorkbook()
+  }else{
+    wb <- loadWorkbook(excel_file)
+  }
+  
+  name_str = names(wb)
+  index <- which(name_str == sheetname)[1]
+  if (!is.na(index)) {
+    Rows = wb$worksheets[[index]]$sheet_data$rows
+    Cols = wb$worksheets[[index]]$sheet_data$cols
+    #print(length(Cols))
+    #print(length(Rows))
+    #print(Cols)
+    #print(Rows)
+    deleteData(wb,sheet=index,cols=1:max(Cols),rows=1:max(Rows),T)
+    #for(i in 1:length(Rows)) {
+    #    writeData(wb,index,"",  startCol = Cols[i], startRow = Rows[i])
+    #}
+  }else{
+    print("~~~")
+    handle_error( addWorksheet(wb, sheetname) )
+    #handle_error( removeWorksheet(wb, sheetname) )
+    print("~~~")
+  }
+  writeData(wb, sheetname, data)
+  saveWorkbook(wb, excel_file,overwrite = TRUE)
+}
+
+cat_ <-function(...){
+  cat(...,sep = "")
+}
+getNumber <- function(num){
+  num = format(round(num, digits = 3), nsmall = 3)
+  return(num)
+}
+getCumulativeList <-function(list_src){
+  newlist = list();
+  for(i in 1:length(list_src)){
+    total=as.numeric(list_src[i])
+    if(i>1){
+      total=total+newlist[[i-1]]
+    }
+    newlist <- append(newlist, total)
+  }
+  return(as.numeric(newlist) )
+}
+#因为loadings的数据结构太怪异,没有办法直接转matrix或data frames ,所以也保存不了excel,因此手工转换
+transLoadings2Matrix<-function(loading){
+  #loading[1:dataL,1:dataW ] <- ifelse(loading[1:dataL,1:dataW ] < 0.5, NA, loading[1:dataL,1:dataW ])
+  #summary(loading)
+  #saveExcel(loading,"Factor Analysis loading")
+  #str(loading)
+  row_names <- c("",rownames(loading))
+  col_names <- c("",colnames(loading))
+  print(col_names)
+  tr_matrix <- matrix(nrow = length(row_names), ncol = length(col_names))
+  #rownames(tr_matrix) <- row_names
+  #colnames(tr_matrix) <- col_names
+  #tr_matrix[2,3] = 1 第二行,第三列
+  for (i in 2:length(row_names)) {
+    tr_matrix[i,1] <- row_names[i]#loading[i, j]
+    #loading[i, j]
+    for (j in 2:length(col_names)) {
+      #print(paste("Row:", i,row_names[i], ", Column:", j,col_names[j], ", Value:", loading[i, j]))
+      if(loading[i-1, j-1]>0.5){
+        tr_matrix[i,j] <- getNumber( loading[i-1, j-1] )
+      }
+    }
+  }
+  for (j in 2:length(col_names)) {
+     tr_matrix[1,j] <- col_names[j]
+  }
+  #print(tr_matrix)
+  return(tr_matrix)
+}
+```
+## 加载数据
+```{r}
+library(memisc)
+#data0 = as.data.set(spss.system.file("spss/telework_new_office_12_srcdata.sav"))
+data_src <- read.csv("spss/sh/data.csv")
+dataL_src = nrow(data_src)
+filtered_data <- data_src[data_src$totalseconds<30,]
+cat("过滤掉:",nrow(filtered_data),"条填写时间少于30s的数据\n")
+data_src = data_src[data_src$totalseconds>=30,]
+#过滤选项全相同的,后面补上
+cat("原始数据:",dataL_src,"条","有效数据:",nrow(data_src),"条\n")
+rm(dataL_src,filtered_data)
+
+data0 = data_src
+#data = as.data.frame(data0)
+#data = data[1:100,]
+cols_base = c("age","gender","education","natrue_enterprise","type_work","job_title_s_data","work_experience","marital_status","partners_work","telework_is_active","hours_per_day","days_per_week")
+cols_independent =c("organisationalCulture2","organisationalCulture0","organisationalCulture3","organisationalCulture1","management2","management3","management4","teleworkerCharacteristics1","teleworkerCharacteristics2","teleworkerCharacteristics3","teleworkerCharacteristics0","communication3","communication2","communication1")
+
+cols_independent_all=c("environment0","environment1","environment2","environment3","jobCharacteristics0","jobCharacteristics1","jobCharacteristics2","jobCharacteristics3","teleworkerCharacteristics0","teleworkerCharacteristics1","teleworkerCharacteristics2","teleworkerCharacteristics3","communication0","communication1","communication2","communication3","communication4","management0","management1","management2","management3","management4","organisationalCulture0","organisationalCulture1","organisationalCulture2","organisationalCulture3","organisationalCulture4","technology0","technology1","technology2","technology3","technology4","asynchronousWork0","asynchronousWork1","asynchronousWork2","asynchronousWork3")
+
+cols_dependent = c("job_effectiveness1","job_effectiveness2","job_effectiveness3","job_effectiveness4","work.life_balance1","work.life_balance2","work.life_balance3","work.life_balance4","well.being1","well.being2","well.being3","well.being4")
+
+#data <- lapply(data, as.numeric)
+#data <- data0[,13:ncol(data0)]
+##---
+#data_independent <- data0[cols_independent]
+#data_independent_all <- data0[cols_independent_all]
+#data_dependent <- data0[cols_dependent]
+#data_dependent_all <- data0[cols_dependent]
+
+```
+## 数据整理,分类
+```{r}
+# Cronbach's α
+#按每个变量单独测!!
+#自变量
+scaleName=c("Teleworker Characteristics","Communication","Management","Organisational Culture","Job Effectiveness","work-life balance","well-being")
+cols_independent_teleworkerCharacteristics=c("teleworkerCharacteristics0","teleworkerCharacteristics1","teleworkerCharacteristics2","teleworkerCharacteristics3")
+cols_independent_communication=c("communication0","communication1","communication2","communication3")
+cols_independent_management=c("management2","management3","management4")
+cols_independent_organisationalCulture=c("organisationalCulture0","organisationalCulture1","organisationalCulture2","organisationalCulture3")
+#因变量
+cols_dependent_job_effectiveness = c("job_effectiveness1","job_effectiveness2","job_effectiveness3","job_effectiveness4")
+cols_dependent_work.life_balance = c("work.life_balance1","work.life_balance2","work.life_balance3","work.life_balance4")
+cols_dependent_well.being = c("well.being1","well.being2","well.being3","well.being4")
+#所有变量
+all_var = list( cols_independent_teleworkerCharacteristics, cols_independent_communication, cols_independent_management, cols_independent_organisationalCulture,  cols_dependent_job_effectiveness, cols_dependent_work.life_balance, cols_dependent_well.being)
+#对每个变量求均值
+data0$teleworkerCharacteristics = rowMeans(data0[cols_independent_teleworkerCharacteristics])
+data0$communication = rowMeans(data0[cols_independent_communication])
+data0$management = rowMeans(data0[cols_independent_management])
+data0$organisationalCulture = rowMeans(data0[cols_independent_organisationalCulture])
+data0$job_effectiveness = rowMeans(data0[cols_dependent_job_effectiveness])
+data0$work.life_balance = rowMeans(data0[cols_dependent_work.life_balance])
+data0$well.being = rowMeans(data0[cols_dependent_well.being])
+
+all_var_calculated = c("teleworkerCharacteristics","communication","management","organisationalCulture","job_effectiveness","work.life_balance","well.being")
+#str(data0)
+```
+
+## 描述性分析
+```{r}
+library(psych)
+library(knitr)
+options(cat.sep = "")
+data_t <- data0[cols_base]
+desc_data <- describe(data_t)
+psych::describe(data_t)
+freq_tables <- lapply(data_t, table)
+print(freq_tables)
+describe_item=c("Age","Gender","Education","Nature of corporate ownership","work type","Job title","work experience","marital status","partners work","telework is active","working hours pre day","working days pre week")
+describe_str=list(
+  c("~25","25~30","30~40","40~45","45~"), #age
+  c("男","女"), #gender
+  c("Junior", "college", "Undergraduate Postgraduate", "Doctor", "Other"), #education
+  c("Foreign-funded enterprise", "Private enterprise", "State-owned enterprise"), #natrue enterprise
+  c("management", "R&D", "Salse", "Operation and maintenance"), #type work
+  c("Ordinary staff", "Grass-roots management",	"Middle management",	"Top management"), # job title
+  c("1", "2~5", "5~10", "10~"), #work experience
+  c("unmarried", "Married without children", "Married with children", "Divorced and childless", "Divorced with children"), #marital status
+  c("unemployed", "In the same company", "Different companies in the same city", "in different cities"), #partners work
+  c("active", "passive"), #telework is active
+  c("1~2", "2~4", "4~8", "8~"), # hours per day
+  c("1", "2~3", "3~5", "5~") #days per week
+)
+content = list("Classification percentage");
+itemName = list("Item name");
+for (i in 1:length(freq_tables)) {  
+  #cat_(names(data_t)[i], ": ")  
+  cat_(describe_item[i],": ")
+  itemName <- append(itemName,describe_item[i])
+  result_str=""
+  for(e in freq_tables[i]){
+    #print(names(e))
+    #输出均值,标准差,
+    #输出频数与非分比
+    total = sum(e)
+    for(name in names(e)){
+      num = e[name]
+      freq = num/total*100
+      freq = getNumber(freq)#format(round(freq, digits = 3), nsmall = 3)
+      namestr = describe_str[[i]][as.integer(name)+1]
+      result_str = paste(result_str,namestr,":",e[name]," ",freq,"% \n")
+      cat_(namestr,":",e[name]," ",freq,"%, ")
+    }
+    content <- append(content,result_str)
+    cat_("\n")  
+  }
+}
+# 使用cbind函数将两个列表按列组合成一个数据集
+#dataset0 <- data.frame(itemName, content)
+dataset <- cbind(itemName, content)
+# 转换结果为数据框
+dataset <- as.data.frame(dataset)
+#dataset
+saveExcel(dataset,"descriptive statistics")
+rm(content,data_t,desc_data,describe_str,freq_tables,itemName,dataset,e,describe_item,total,result_str,num,freq,i,name,namestr)
+```
+##三大验验
+### 独立验检
+检验两个分类变量之间是否存在关联
+```{r}
+data <- table(data0$age, data0$gender)
+chisq.test(data)
+```
+### 正态性检验
+```{r}
+library(nortest)  
+data <- data0[,13]
+result = shapiro.test(data) # 对应group 每组水平下的检验
+print(result$p.value)
+```
+### 方差齐性
+方差齐性特指两个或两个以上总体方差是否具有显著差异的特性
+```{r}
+bartlett.test(data0$environment0~data0$gender, data = data0)
+```
+## 信度分析  Cronbach's α（克朗巴哈系数）
+Internal Reliability
+• 再测信度
+• Cronbach's α（克朗巴哈系数）
+• 折半信度
+• Guttman
+• 平行模型检验
+• 严密平行模型检验 • 库李20信度
+Inter-rater Reliability
+• Kappa系数
+• 组内相关系数ICC
+```{r}
+#print(all_var)
+library(psych)
+#names(all_var)
+get_var_name <- function(x) {  
+  deparse(substitute(x))  
+}
+tr_matrix <- matrix(nrow = length(all_var)+sum(lengths(all_var))+1, ncol = 3)
+tr_matrix[1,] = c("","Cronbach's alpha", "N of Items")
+#-   |Cronbach's alpha|N of Items
+#name|0.829           |5
+tr_matrixrow=2
+for(i in seq_len(length(all_var))){
+  selected_column_name = unlist(all_var[i])
+  data_t <- data0[ selected_column_name ]
+  alpha_result <- psych::alpha(data_t,check.keys=TRUE) 
+  tr_matrix[tr_matrixrow,1] = scaleName[i]
+  tr_matrix[tr_matrixrow,2] = getNumber( alpha_result$total$raw_alpha )
+  tr_matrix[tr_matrixrow,3] = length(alpha_result$keys[[1]])
+  tr_matrixrow=tr_matrixrow+1
+  for(j in 1:length(alpha_result$keys[[1]]) ){
+    tr_matrix[tr_matrixrow,1] = alpha_result$keys[[1]][j]
+    tr_matrix[tr_matrixrow,2] = getNumber( alpha_result$item.stats$raw.r[j] )
+    tr_matrixrow=tr_matrixrow+1
+  }
+}
+saveExcel(tr_matrix,"Cronbach's alpha")
+print(tr_matrix)
+```
+## KMO检测 and bartlett's test
+```{r}
+#data_independent <- data0[cols_independent]
+#data_independent_all <- data0[cols_independent_all]
+#data_dependent <- data0[cols_dependent]
+#data_dependent_all <- data0[cols_dependent]
+data = data0[c(cols_independent,cols_dependent)]
+item = list()
+content = list()
+kmo <- KMO(data)
+bartlett <- bartlett.test(data)
+
+item <- append(item, "Overall MSA" )
+content <- append(content,getNumber(kmo$MSA) )
+
+item <- append(item, names(bartlett$statistic) )
+content <- append(content, getNumber(bartlett$statistic) )
+item <- append(item, "df" )
+content <- append(content, bartlett$parameter )
+item <- append(item, "Sig." )
+content <- append( content,getNumber(bartlett$p.value) )
+
+item <- append(item, names(kmo$MSAi) )
+content <- append(content, getNumber(kmo$MSAi) )
+
+#dataset0 <- data.frame(itemName, content)
+dataset <- cbind(item, content)
+# 转换结果为数据框
+dataset <- as.data.frame(dataset)
+#dataset
+saveExcel(dataset,"KMO and Bartlett's Test")
+
+print(kmo)
+print(bartlett)
+
+rm(item,content,kmo,bartlett,dataset,data)
+```
+## 因子分析 EFA:
+Factor Analysis Total Variance Explained & commualities
+```{r}
+library(psych)
+library(paran)
+#library(rgl) #需要opengl
+library(ggfortify)
+data <- data0[cols_independent]
+#data <- data0[cols_dependent]
+
+# AIC BIC 比较模型 parallel平行分析 可得因子数,否则只能自已手动尝试观察
+parallel_result <- fa.parallel(data, fa = "pc", n.iter = 100, main = "Parallel Analysis")
+factors = parallel_result$nfact
+if( is.na(parallel_result$nfact) ){
+  factors = parallel_result$ncomp
+  if( is.na(parallel_result$ncomp) ){
+    stop("没有得到因子数,请检查数据")  # 抛出异常
+    quit(save = "no", status = 1)  # 退出当前会话
+  }
+}
+print(factors)
+rm(parallel_result)
+## 因子分析
+fa_results <- fa(data, nfactors = factors, rotate = "varimax") 
+#得到Comunalities表 Initial都为1 , Extraction就是下面的值
+communalities = fa_results$communalities
+component = names(communalities)
+Initial = rep(1,length(component))
+Extraction = getNumber( as.numeric(abs(communalities)) ) 
+dataset <- cbind(component, Initial, Extraction)
+dataset <- as.data.frame(dataset)
+saveExcel(dataset,"Factor Analysis commualities")
+#得到Total Variance Explained
+dataL = length(fa_results$values)
+print(dataL)
+component <- 1:dataL
+#得到Initial Eigenvalues
+
+variance_explained = abs(fa_results$values) / sum(abs(fa_results$values)) *100
+Total =  getNumber( abs(fa_results$values))  # Total
+Variance =  getNumber( variance_explained)  # % of Variance
+Cumulative = getNumber( getCumulativeList(variance_explained)) # Cumulative %
+print(Total)
+print(Variance)
+print(Cumulative)
+#得到 Extraction Sums of Squared Loadings 与Initial Eigenvalues一样,只是只显示因子项
+print(class(Total))
+Total1 = Total
+Variance1 = Variance
+Cumulative1 = Cumulative
+startIndex = factors+1
+endIndex = dataL
+Total1[startIndex:endIndex] <- NA  # Total
+Variance1[startIndex:endIndex] <- NA  # % of Variance
+Cumulative1[startIndex:endIndex] <- NA # Cumulative %
+#得到 Rotation Sums of Squared Loadings
+variance_explained = abs(fa_results$e.values) / sum(abs(fa_results$e.values)) *100
+Total2 = getNumber( abs(fa_results$e.values) ) # Total
+Variance2 = getNumber( variance_explained) # % of Variance
+Cumulative2 = getNumber( getCumulativeList(variance_explained)) # Cumulative %
+print(Total2)
+print(Variance2)
+print(Cumulative2)
+Total2[startIndex:endIndex] <- NA  # Total
+Variance2[startIndex:endIndex] <- NA  # % of Variance
+Cumulative2[startIndex:endIndex] <- NA # Cumulative %
+dataset <- cbind(component, "Total"=Total, "% of Variance"=Variance,"Cumulative %"=Cumulative,"Total"=Total1, "% of Variance"=Variance1, "Cumulative %"=Cumulative1,"Total"=Total2,"% of Variance"= Variance2, "Cumulative %"=Cumulative2)
+dataset <- as.data.frame(dataset)
+saveExcel(dataset,"Factor Analysis Total")
+
+##获得旋转矩阵 loadings
+#summary(fa_results)
+print(fa_results$loadings)
+tr_matrix = transLoadings2Matrix(fa_results$loadings)
+#saveExcel(tr_matrix,"Factor Analysis loading")
+print(fa_results$Vaccounted)
+tr_matrix1 = transLoadings2Matrix(fa_results$Vaccounted)
+tr_matrix = rbind(tr_matrix,tr_matrix1)
+#print(tr_matrix)
+saveExcel(tr_matrix,"Factor Analysis loading")
+## EFA 分析,探索性分析
+#fa = factanal(data,factors=factors,rotation = "varimax")
+#summary(fa)
+#autoplot3d(fa, color = "Factor")
+#scatter3d(fa$scores[, 1], fa$scores[, 2], fa$scores[, 3], color = fa$loadings[, 1])
+#print(fa)
+
+rm(data,dataset,factors,fa_results,fa,loadings,filtered_loadings,tr_matrix,tr_matrix1,Total,Total1,Total2,Variance,Variance1,Variance2,Cumulative,Cumulative2,Cumulative3,communalities,component,Cumulative1,dataL,endIndex,Extraction,Initial,startIndex,variance_explained)
+```
+## T-Test
+### 单样本T检验
+• 默认前提条件是数据需要符合正态分布性 
+• 结果是否显著等于某一值
+• 男性的工资显著等于3000元
+```{r}
+# 创建一个数值向量  
+data <- c(1, 2, 3, 4, 5, 6, 7, 8, 9)
+# 执行单样本t检验，检验均值是否显著不同于0  
+t_test_result <- t.test(data, mu = 0)
+# 打印结果  
+print(t_test_result)
+```
+### 独立样本T检验
+• 要求因变量(y)需要符合正态分布性
+• X与Y的差异是否显著
+• 例:研究男性工资与女性工资之间的差异
+```{r}
+# 创建两个数值向量  
+#group1 <- c(1, 2, 3, 4, 5)
+#group2 <- c(6, 7, 8, 9, 10)
+# 执行独立样本t检验
+#t_test_result <- t.test(group1, group2)
+# 打印结果
+#print(t_test_result)
+t_test_result <- t.test(data0[data0$gender==0,]$job_effectiveness, data0[data0$gender==1,]$job_effectiveness)
+print(t_test_result)
+t_test_result <- t.test(data0[data0$gender==0,]$work.life_balance, data0[data0$gender==1,]$work.life_balance)
+print(t_test_result)
+t_test_result <- t.test(data0[data0$gender==0,]$well.being, data0[data0$gender==1,]$well.being)
+print(t_test_result)
+```
+### 配对样本T检验
+• 默认前提条件是差值数据需要符合正态分布性
+• 利用来自两个总体的配对样本，推断两个总体的均值是否存在显著差异。 
+• 办公室提供免费咖啡和没有提供免费咖啡的两组员工，生产力是否一样?
+```{r}
+# 创建配对的数值向量
+before <- c(1, 2, 3, 4, 5)
+after <- c(2, 3, 4, 5, 6)
+# 执行配对样本t检验
+#t_test_result <- t.test(before, after, paired = TRUE)
+# 打印结果
+#print(t_test_result)
+```
+
+## 方差分析
+### ONE-WAY ANOVA 单因素方差分析 方差齐检验homogeneity of variance test
+ANOVA, LevenTest, Tukey's HSD, Duncan's C
+```{r}
+
+```
+temp
+```{r}
+library(car)
+library(multcomp)  
+library(multcompView) 
+## 按性别分析因变量
+anova<-function(x_data,y_data,tr_matrix_old=NULL){
+  
+  #加一行title
+  tr_matrix <- matrix(nrow = 2, ncol = 7)
+  xname = paste(as.character(substitute(y_data)),collapse="")
+  yname = paste(as.character(substitute(x_data)),collapse="")
+  #str(xname)
+  tempstr = paste("diff " ,xname , " by " ,yname )
+  print(tempstr)
+  tr_matrix[2,1] = tempstr
+  if(!is.null(tr_matrix_old)){
+    tr_matrix = rbind(tr_matrix_old, tr_matrix)
+  }
+  
+  x <- factor( as.character(x_data) )
+  y <- y_data
+  data = data.frame(x,y)
+  model <- aov(y ~ x, data=data)
+  leveneTest_result = leveneTest(model)
+  # 进行图基事后比较  
+  tukey_comparison <- glht(model, linfct = mcp(x = "Tukey")) 
+  # 进行邓尼特事后比较，其中"control"是对照组  
+  dunnett_comparison <- glht(model, linfct = mcp(x = "Dunnett")) 
+  
+  print("model")
+  sum = summary(model) #spss中的ANOVA全在这个结果里面
+  #Df（自由度）：这列显示了每个方差来源的自由度。
+  #Sum Sq（平方和）：这列显示了每个方差来源的平方和。平方和(组间(值小),组内(值大),总计(前两相加))
+  #Mean Sq（均方）：这列显示了每个方差来源的均方（即平方和除以自由度）。平方和/自由度
+  #F value（F统计量）：这是组间均方与组内均方的比值。
+  #Pr(>F)（p值）：这是与F统计量相关联的p值。
+  tr_matrix_old = tr_matrix
+  tr_matrix <- matrix(nrow = 4, ncol = 7)
+  tr_matrix[1,]=c("","平方和","自由度","均方","F","显著性",NA)
+  tr_matrix[,1]=c("","组间","组内","总计")
+  tr_matrix[2,2] = getNumber(sum[[1]]["Sum Sq"][1,1])
+  tr_matrix[3,2] = getNumber(sum[[1]]["Sum Sq"][2,1])
+  tr_matrix[4,2] = getNumber(sum(sum[[1]]["Sum Sq"]))
+  tr_matrix[2,3] = sum[[1]]["Df"][1,1]
+  tr_matrix[3,3] = sum[[1]]["Df"][2,1]
+  tr_matrix[4,3] = sum(sum[[1]]["Df"])
+  tr_matrix[2,4] = getNumber(sum[[1]]["Mean Sq"][1,1])
+  tr_matrix[3,4] = getNumber(sum[[1]]["Mean Sq"][2,1])
+  tr_matrix[2,5] = getNumber(sum[[1]]["F value"][1,1])
+  tr_matrix[2,6] = getNumber(sum[[1]]["Pr(>F)"][1,1])
+  print(tr_matrix)
+  tr_matrix = rbind(tr_matrix_old, tr_matrix)  
+  
+  print("leveneTest_result")
+  #print(leveneTest_result) #spss中的方差齐性检验
+  #F value 莱文统计
+  #df 自由度1,2
+  #Pr(>F)（p值）：这是与F统计量相关联的p值
+  tr_matrix_old = tr_matrix
+  tr_matrix <- matrix(nrow = 2, ncol = 7)
+  tr_matrix[1,]=c("莱文统计","自由度1","自由度2","显著性",NA,NA,NA)
+  tr_matrix[2,1] = getNumber(leveneTest_result["F value"][1,1])
+  tr_matrix[2,2] = leveneTest_result["Df"][1,1]
+  tr_matrix[2,3] = leveneTest_result["Df"][2,1]
+  tr_matrix[2,4] = getNumber(leveneTest_result["Pr(>F)"][1,1])
+  print(tr_matrix)
+  tr_matrix = rbind(tr_matrix_old, tr_matrix)  
+  
+  print("tukey_comparison")
+  sum = summary(tukey_comparison) #图基HSD
+  str(sum$test)
+  print(sum)
+  diffname = names(sum$test$coefficients)
+  t_critical <- qt(0.975, 348)
+  tr_matrix_old = tr_matrix
+  tr_matrix <- matrix(nrow = length(diffname)+2, ncol = 7)
+  tr_matrix[1,]=c("","","","","","95%置信区间","")
+  tr_matrix[2,]=c("group","group","平均值差值","标准差","显著性","下限","上限")
+  lastname = ""
+  for(i in 1:length(diffname)){
+    names = split_str <- strsplit(diffname[i]," - ")
+    if(lastname!=names[[1]][2]){
+      lastname = tr_matrix[2+i,1] = names[[1]][2]
+    }
+    tr_matrix[2+i,2] = names[[1]][1]
+    c=""
+    if( sum$test$pvalues[i]<0.001){
+        c="***"
+      }else if( sum$test$pvalues[i]<0.01){
+        c="**"
+      }else if( sum$test$pvalues[i]<0.05){
+        c="*"
+      }
+    tr_matrix[2+i,3] = paste( getNumber( sum$test$coefficients[i] ), c,collapse="")
+    tr_matrix[2+i,4] = getNumber( sum$test$sigma[i] )
+    tr_matrix[2+i,5] = getNumber( sum$test$pvalues[i] )
+    tr_matrix[2+i,6] = getNumber( sum$test$coefficients[i] - t_critical * sum$test$sigma[i] )
+    tr_matrix[2+i,7] = getNumber( sum$test$coefficients[i] + t_critical * sum$test$sigma[i] )
+  }
+  print(tr_matrix)
+  tr_matrix = rbind(tr_matrix_old, tr_matrix)  
+  #print(tr_matrix)
+  ##multcomp_plot(tukey_comparison)
+  #print("dunnett_comparison")
+  #print(summary(dunnett_comparison))
+  return(tr_matrix)
+}
+#anova(data0$gender,data0$job_effectiveness)
+dataset = anova(data0$age,data0$job_effectiveness,tr_matrix_old=NULL)
+dataset = anova(data0$age,data0$work.life_balance,tr_matrix_old=dataset)
+dataset = anova(data0$age,data0$well.being,tr_matrix_old=dataset)
+
+dataset = anova(data0$gender,data0$job_effectiveness,tr_matrix_old=dataset)
+dataset = anova(data0$gender,data0$work.life_balance,tr_matrix_old=dataset)
+dataset = anova(data0$gender,data0$well.being,tr_matrix_old=dataset)
+
+dataset = anova(data0$education,data0$job_effectiveness,tr_matrix_old=dataset)
+dataset = anova(data0$education,data0$work.life_balance,tr_matrix_old=dataset)
+dataset = anova(data0$education,data0$well.being,tr_matrix_old=dataset)
+
+dataset = anova(data0$natrue_enterprise,data0$job_effectiveness,tr_matrix_old=dataset)
+dataset = anova(data0$natrue_enterprise,data0$work.life_balance,tr_matrix_old=dataset)
+dataset = anova(data0$natrue_enterprise,data0$well.being,tr_matrix_old=dataset)
+
+dataset = anova(data0$type_work,data0$job_effectiveness,tr_matrix_old=dataset)
+dataset = anova(data0$type_work,data0$work.life_balance,tr_matrix_old=dataset)
+dataset = anova(data0$type_work,data0$well.being,tr_matrix_old=dataset)
+
+dataset = anova(data0$job_title_s_data,data0$job_effectiveness,tr_matrix_old=dataset)
+dataset = anova(data0$job_title_s_data,data0$work.life_balance,tr_matrix_old=dataset)
+dataset = anova(data0$job_title_s_data,data0$well.being,tr_matrix_old=dataset)
+
+dataset = anova(data0$work_experience,data0$job_effectiveness,tr_matrix_old=dataset)
+dataset = anova(data0$work_experience,data0$work.life_balance,tr_matrix_old=dataset)
+dataset = anova(data0$work_experience,data0$well.being,tr_matrix_old=dataset)
+
+dataset = anova(data0$marital_status,data0$job_effectiveness,tr_matrix_old=dataset)
+dataset = anova(data0$marital_status,data0$work.life_balance,tr_matrix_old=dataset)
+dataset = anova(data0$marital_status,data0$well.being,tr_matrix_old=dataset)
+
+dataset = anova(data0$partners_work,data0$job_effectiveness,tr_matrix_old=dataset)
+dataset = anova(data0$partners_work,data0$work.life_balance,tr_matrix_old=dataset)
+dataset = anova(data0$partners_work,data0$well.being,tr_matrix_old=dataset)
+
+saveExcel(dataset,"ANOVA")
+rm(anova)
+```
+### TWO-WAY ANOVA 双因素方差分析步骤 
+LSD.test and Bonferroni, duncan.test
+```{r}
+library(car)
+library(multcomp)
+library(knitr)
+library(xtable)
+library(agricolae)  
+library(multcomp)  
+library(multcompView)  
+library(emmeans)
+## 按性别分析因变量
+x0 <- factor( as.character(data0$age) )
+x1 <- factor( as.character(data0$gender) )
+y <- data0$job_effectiveness
+data = data.frame(x0,x1,y)
+model <- aov(y ~ x0 * x1, data=data)
+model <- aov(y ~ x0 * x1, data=data)
+data_1 = data.frame(x0=data0$age,x1=data0$gender,y=data0$job_effectiveness)
+model_1 <- aov(y ~ x0 * x1, data=data_1)
+
+# 如果ANOVA拒绝原假设，执行Fisher's LSD
+#if (summary(model)$'Pr(>F)'[1] < 0.05) {
+  print("~~~~~~~ LSD.test")
+  pairwise_results <- LSD.test(model_1, "x0", p.adj="bonferroni") #bonferroni#对p值进行修正
+  pairwise_results
+  plot(pairwise_results)
+  print("~~~~~~~")
+#}
+
+leveneTest_result = leveneTest(model)
+# 进行图基事后比较  
+tukey_comparison0 <- glht(model, linfct = mcp(x0 = "Tukey")) 
+tukey_comparison1 <- glht(model, linfct = mcp(x1 = "Tukey")) 
+tuk <- TukeyHSD(model)
+duncan <- duncan.test(model,'x0')
+
+# 进行邓尼特事后比较，其中"control"是对照组  
+#dunnett_comparison <- glht(model, linfct = mcp(x = "Dunnett")) 
+#xtable(summary(model), type = "html", digits = 2, width = "600px", include.rownames = FALSE, include.colnames = TRUE, caption = "双因素方差分析结果")
+#kable(summary(model), format = "html")
+summary(model)
+summary(leveneTest_result)
+summary(tukey_comparison0)
+summary(tukey_comparison1)
+summary(tuk)
+duncan
+
+#multcomp_plot(tukey_comparison)
+#summary(dunnett_comparison)
+```
+
+## 相关性分析
+Pearson(皮尔逊)相关系数
+```{r}
+library(corrplot)
+getCol <-function(data){
+  correlation_result0 <- corr.test(data)
+  r_value = correlation_result0$r
+  p_value = correlation_result0$p
+  # 使用 for 循环遍历矩阵
+  for (i in 1:nrow(p_value)) {
+    for (j in 1:ncol(p_value)) {
+      # 访问矩阵元素
+      #保留上3角
+      if(i>1&&j<i){
+        r_value[i, j] = NA
+        next
+      }
+      c = ""
+      if( p_value[i,j]<0.001){
+        c="***"
+      }else if( p_value[i,j]<0.01){
+        c="**"
+      }else if( p_value[i,j]<0.05){
+        c="*"
+      }
+      r_value[i, j]=format(as.numeric(r_value[i, j]), digits = 3)
+      #r_value[i, j]=round(as.numeric(r_value[i, j]),3)
+      #r_value[i, j]=paste(as.character(r_value[i, j]),c)
+      r_value[i, j]=paste(r_value[i, j],c)
+    }
+  }
+  
+  return(r_value)
+}
+data <- data0[c(cols_independent,cols_dependent)]
+r_value = getCol(data)
+kable(r_value)
+correlation_result0 = cor(data)
+corrplot(correlation_result0, method = "color")
+saveExcel(r_value,"correlation Pearson")
+
+data <- data0[all_var_calculated]
+r_value = getCol(data)
+kable(r_value)
+correlation_result0 = cor(data)
+corrplot(correlation_result0, method = "color")
+saveExcel(r_value,"correlation Pearson2")
+#data <- data0[cols_dependent]
+#r_value = getCol(data)
+#kable(r_value)
+#correlation_result1 = cor(data)
+#corrplot(correlation_result1, method = "color")
+
+```
+### R语言GGally画图展示多变量之间两两的相关性简单小例子
+```{r}
+library(GGally)
+data_r <- data0[c(cols_independent,cols_dependent)]
+data_r$well.being1 <- factor(data_r$well.being1)
+ggpairs(data)
+'
+cols = c("steelblue","yellowgreen","violetred1")
+p<-ggpairs(data_r,columns = 1:7,
+           aes (color=well.being1))+
+  scale_color_manual(values = cols) + 
+  scale_fill_manual (values=cols)+ 
+  theme_bw()+
+  theme(strip.background = element_rect(fill="#d63d2d"),
+  strip.text = element_text (color="white"))
+#ggsave(filename = "Rplot12.pdf",p,width = 15,height = 15)
+'
+```
+
+## 回归分析
+## 一元回归分析
+略...
+## 多元回归分析 VIF 共线性诊断 Durbin-Watson (DW):
+容差值（Tolerance）是VIF的倒数，即Tolerance = 1/VIF 
+Durbin-Watson (DW):
+在“2”附近不存在序列相关，非伪回归方程; • 小于“2”存在正自相关;
+• 大于“2”存在负自相关
+```{r}
+library(ggplot2)
+library(car)
+library(lmtest)
+#environment, jobCharacteristics, teleworkerCharacteristics, communication, management, organisationalCulture, technology, asynchronousWork
+#job_effectiveness, work.life_balance, well.being
+#"environment","jobCharacteristics","teleworkerCharacteristics","communication","management","organisationalCulture","technology","asynchronousWork"
+#data = data0[, c("environment","jobCharacteristics","teleworkerCharacteristics","communication","management","organisationalCulture","technology","asynchronousWork") ]
+data = data0[, c("teleworkerCharacteristics","communication","management","organisationalCulture","job_effectiveness") ]
+mylm<-function(...,data=NULL){
+  # 因变 ~ 自变量1 + 自变量2 + ... ,
+  #model <- lm(work.life_balance ~ teleworkerCharacteristics + communication + management + organisationalCulture, data = data0)  
+  model <- lm(..., data = data)  
+  # 查看模型摘要，获取回归系数、标准误、t值和p值等信息  
+  sum = summary(model)  
+  print(sum)
+  #result = cor(data) #变量间如果相关性为1,则不能进行vif验证
+  #print(result)
+  vif = vif(model)
+  #容差值（Tolerance）是VIF的倒数，即Tolerance = 1/VIF
+  Tolerance = 1/vif
+  print(vif)
+  print(Tolerance)
+  # Durbin-Watson (DW): 德宾沃森
+  dw_test <- dwtest(model)
+  print(dw_test)
+  #coef(model)
+  #predict(model)
+  AIC(model)
+  BIC(model)
+  #plot(model$resid)
+  # 输出模型的详细结果  
+  print(model)
+  # 预测新数据点的mpg值  
+  # 假设我们有一个新的数据点，马力为120，车重为3  
+  #newdata <- data.frame(environment = 5.2, jobCharacteristics = 6)  
+  #predictions <- predict(model, newdata)  
+  #print(predictions)  
+  # 绘制回归拟合线  
+  # 首先，安装并加载所需的绘图包 
+  # 创建散点图并添加拟合线  
+  #ggplot(mtcars, aes(x = environment, y = job_effectiveness, color = factor(cyl))) +  
+  #  geom_point() +  
+  #  geom_smooth(method = lm, se = FALSE, formula = job_effectiveness ~ environment) +  
+  #  labs(title = "Regression of mpg on hp", x = "Horsepower", y = "Miles/(US) gallon") 
+} 
+```
+
+```{r}
+mylm(work.life_balance ~ teleworkerCharacteristics + communication + management + organisationalCulture,data=data0)
+mylm(job_effectiveness ~ teleworkerCharacteristics + communication + management + organisationalCulture,data=data0)
+mylm(well.being ~ teleworkerCharacteristics + communication + management + organisationalCulture,data=data0)
+#mylm(work.life_balance ~ teleworkerCharacteristics + communication + management ,data=data0)
+#mylm(work.life_balance ~ teleworkerCharacteristics + communication + organisationalCulture,data=data0)
+#mylm(work.life_balance ~ teleworkerCharacteristics  + management + organisationalCulture,data=data0)
+#mylm(work.life_balance ~ communication + management + organisationalCulture,data=data0)
+
+
+```
+
+### 多元回归可始化
+```{r}
+library(plotly)
+library(reshape2)
+library(tidyverse)
+library(tidymodels)
+library(plotly)
+#install.packages("kernlab")
+library(kernlab)
+#install.packages("pracma")
+library(pracma) #为了在曲面上显示网格线
+data(iris)
+#选择自变量和因变量
+mesh_size <- .02
+margin <- 0
+X <- iris %>% select(Sepal.Width, Sepal.Length)
+y <- iris %>% select(Petal.Width)
+model <- svm_rbf(cost = 1.0) %>% 
+  set_engine("kernlab") %>% 
+  set_mode("regression") %>% 
+  fit(Petal.Width ~ Sepal.Width + Sepal.Length, data = iris)
+x_min <- min(X$Sepal.Width) - margin
+x_max <- max(X$Sepal.Width) - margin
+y_min <- min(X$Sepal.Length) - margin
+y_max <- max(X$Sepal.Length) - margin
+xrange <- seq(x_min, x_max, mesh_size)
+yrange <- seq(y_min, y_max, mesh_size)
+xy <- meshgrid(x = xrange, y = yrange)
+xx <- xy$X
+yy <- xy$Y
+dim_val <- dim(xx)
+xx1 <- matrix(xx, length(xx), 1)
+yy1 <- matrix(yy, length(yy), 1)
+final <- cbind(xx1, yy1)
+pred <- model %>%
+  predict(final)
+
+pred <- pred$.pred
+pred <- matrix(pred, dim_val[1], dim_val[2])
+fig <- plot_ly(iris, x = ~Sepal.Width, y = ~Sepal.Length, z = ~Petal.Width ) %>% 
+  add_markers(size = 5) %>% 
+  add_surface(x=xrange, y=yrange, z=pred, alpha = 0.65, type = 'mesh3d', name = 'pred_surface')
+fig
+
+```
+
+```{r}
+library(plot3D)
+set.seed(123)  
+n <- 100  
+x1 <- rnorm(n)  
+x2 <- rnorm(n)  
+y <- 2*x1 + 3*x2 + rnorm(n)  
+  
+data <- data.frame(x1, x2, y)  
+model <- lm(y ~ x1 + x2, data = data)
+# 创建一个网格  
+grid_x1 <- seq(min(data$x1), max(data$x1), length.out = 50)  
+grid_x2 <- seq(min(data$x2), max(data$x2), length.out = 50)  
+grid <- expand.grid(x1 = grid_x1, x2 = grid_x2)  
+  
+# 预测网格上的y值  
+grid$y_pred <- predict(model, newdata = grid)  
+  
+# 绘制三维散点图  
+scatter3D(data$x1, data$x2, data$y, pch = 20, colvar = NULL, col = "blue",   
+          xlab = "x1", ylab = "x2", zlab = "y", theta = 40, phi = 30,   
+          ticktype = "detailed", cex.lab = 1.2, cex.axis = 1.2)  
+  
+# 绘制三维拟合曲面  
+#surf3D(grid_x1, grid_x2, matrix(grid$y_pred, nrow = length(grid_x2)),   add = TRUE, colvar = NULL, colkey = FALSE, alpha = 0.3)
+
+library(plot3D)  
+  
+# 创建网格  
+x <- seq(-10, 10, length.out = 30)  
+y <- seq(-10, 10, length.out = 30)  
+  
+# 创建网格矩阵  
+x_grid <- outer(x, y, Vectorize(function(x, y) x))  
+y_grid <- outer(x, y, Vectorize(function(x, y) y))  
+  
+# 计算z值（这里使用一个简单的函数作为例子）  
+z_grid <- outer(x, y, function(x, y) sin(sqrt(x^2 + y^2)) / sqrt(x^2 + y^2))  
+  
+# 使用surf3D绘制3D曲面图  
+surf3D(x = x_grid, y = y_grid, z = z_grid, colvar = NULL,   
+       color = "green", alpha = 0.8, xlab = "X", ylab = "Y", zlab = "Z",   
+       main = "3D Surface Plot")
+
+```
+```{r}
+# 创建示例数据
+set.seed(123)
+x1 <- rnorm(100)
+x2 <- rnorm(100)
+x3 <- rnorm(100)
+y <- 2*x1 + 3*x2 + 1.5*x3 + rnorm(100)
+
+# 拟合多元回归模型
+model <- lm(y ~ x1 + x2 + x3)
+
+# 绘制多元回归模型
+plot(y ~ x1, col="blue", pch=16, xlab="x1", ylab="y")
+points(x2, y, col="red", pch=16)
+points(x3, y, col="green", pch=16)
+abline(model, col="purple", lwd=2)
+legend("topleft", legend=c("x1", "x2", "x3", "Regression Line"),
+       col=c("blue", "red", "green", "purple"), pch=16, lwd=2)
+
+library(ggfortify)
+
+autoplot(model)
+
+autoplot(model, type = "resid")
+
+autoplot(model, type = "fit")
+
+autoplot(model, type = "conf")
+```
+## 中介效应分析
+## 调节分析
+### 共线性诊断不通过
+  取标准化值
+## SEM
+https://lavaan.ugent.be/tutorial/
+a->b->c 
+a->c
+b为中介变量,中介效应: a->b的系数 * b-c的系数
+总效应 中介效应+a->c的系数
+```{r}
+library(lavaan)
+library(semPlot)
+#SEM
+model <- '
+# 潜变量 =~ 测量指标1(既量表) + 测量指标2 + ...
+teleworkerCharacteristics =~ teleworkerCharacteristics1 + teleworkerCharacteristics2 + teleworkerCharacteristics3
+communication =~ communication1 + communication2 + communication3
+management =~ management2 + management3 + management4
+organisationalCulture =~ organisationalCulture1 + organisationalCulture2 + organisationalCulture3 + organisationalCulture4
+#因变量
+job_effectiveness =~ job_effectiveness1 + job_effectiveness2 + job_effectiveness3 + job_effectiveness4
+work.life_balance =~ work.life_balance1 + work.life_balance2 + work.life_balance3 + work.life_balance4
+well.being =~ well.being1 + well.being2 + well.being3 + well.being4
+#回归方程
+# 因变量~ 自变量1+自变量2+...
+#中介
+work.life_balance ~ beta_work_tel*teleworkerCharacteristics + beta_work_com*communication + beta_work_man*management + beta_work_org*organisationalCulture
+well.being ~ beta_well_tel*teleworkerCharacteristics + beta_well_com*communication + beta_well_man*management + beta_well_org*organisationalCulture
+#直接
+job_effectiveness ~ beta_job_tel*teleworkerCharacteristics + beta_job_com*communication + beta_job_man*management + beta_job_org*organisationalCulture + beta_job_work*work.life_balance + beta_job_well*well.being
+#中介效应
+indirect_work_job_tel:=beta_work_tel*beta_job_tel
+indirect_work_job_com:=beta_work_com*beta_job_com
+indirect_work_job_man:=beta_work_man*beta_job_man
+indirect_work_job_org:=beta_work_org*beta_job_org
+
+indirect_well_job_tel:=beta_well_tel*beta_job_tel
+indirect_well_job_com:=beta_well_com*beta_job_com
+indirect_well_job_man:=beta_well_man*beta_job_man
+indirect_well_job_org:=beta_well_org*beta_job_org
+#整体效应
+all:=indirect_work_job_tel+indirect_work_job_com+indirect_work_job_man+indirect_work_job_org+indirect_well_job_tel+indirect_well_job_com+indirect_well_job_man+indirect_well_job_org+beta_job_work+beta_job_well
+'
+result <- sem(model,data=data_src)
+
+#summary(result,standardized = TRUE)
+summary(result,standardized=TRUE, fit.measures=TRUE) #后面画图后,显示不全
+
+#chisq_result = chisq.test(result)
+#summary(chisq_result)
+#获取模型拟合参数
+fits = fitMeasures(result)
+fits
+summary(fits)
+fits['rmsea']
+
+#summary(result)
+#模型概览
+
+```
+```{r}
+semPaths(result,   
+         what = "std.all", #"est",     # 显示估计的系数  
+         whatLabels = "est", # 标签显示估计的系数  
+         style="lisrel", #"lisrel"、"ram"、"dot"、"jgraph"等。默认为"lisrel"。
+         intervals=T,
+         node.color = "blue",
+         estimlegend.cex = 1.5, #系数字体大小
+         edge.color = "blue",
+         edge.label.cex = 1, # 调整标签大小  
+         fade = F,       # 不使用渐变效果  
+         layout="tree",
+         rotation=1,
+         nCharNodes = 0.05,
+         residuals=T,
+         curvePivot = TRUE)  # 曲线在变量处弯曲
+
+# semPaths(fit, whatLabels="est.std", style="lisrel", edge.label.cex=1, layout="tree2", rotation=2, nCharNodes=3)
+```
+```{r}
+model <- '
+# 潜变量 =~ 测量指标1(既量表) + 测量指标2 + ...
+environment =~ environment0 + environment1 + environment2 + environment3
+jobCharacteristics =~ jobCharacteristics0 + jobCharacteristics1 + jobCharacteristics2 + jobCharacteristics3
+teleworkerCharacteristics =~ teleworkerCharacteristics0 + teleworkerCharacteristics1 + teleworkerCharacteristics2 + teleworkerCharacteristics3
+communication =~ communication0 + communication1 + communication2 + communication3 + communication4
+management =~ management0 + management1 + management2 + management3 + management4
+organisationalCulture =~ organisationalCulture0 + organisationalCulture1 + organisationalCulture2 + organisationalCulture3 + organisationalCulture4
+technology =~ technology0 + technology1 + technology2 + technology3 + technology4
+asynchronousWork =~ asynchronousWork0 + asynchronousWork1 + asynchronousWork2 + asynchronousWork3
+#因变量
+job_effectiveness =~ job_effectiveness1 + job_effectiveness2 + job_effectiveness3 + job_effectiveness4
+work.life_balance =~ work.life_balance1 + work.life_balance2 + work.life_balance3 + work.life_balance4
+well.being =~ well.being1 + well.being2 + well.being3 + well.being4
+#回归方程
+# 因变量~ 自变量1+自变量2+...
+#job_effectiveness ~ environment + jobCharacteristics + teleworkerCharacteristics + communication + management + organisationalCulture + technology + asynchronousWork
+#work.life_balance ~ environment + jobCharacteristics + teleworkerCharacteristics + communication + management + organisationalCulture + technology + asynchronousWork
+well.being ~ environment + jobCharacteristics + teleworkerCharacteristics + communication + management + organisationalCulture + technology + asynchronousWork
+'
+'
+model: SEM模型的拟合对象，通常是由sem()函数拟合后得到的对象。
+what: 指定要显示的内容，可以是"std"（标准化估计值）、"std.lv"（标准化潜变量）、"std.all"（标准化估计值和标准化潜变量）、"std.nox"（标准化估计值但不包括残差）等。默认值为"std".
+style: 图形风格，可以是"lisrel"、"ram"、"dot"、"jgraph"等。默认为"lisrel"。
+residuals: 是否显示残差。默认为TRUE。
+intervals: 是否显示参数估计的置信区间。默认为FALSE。
+whatLabels: 是否显示节点标签。默认为FALSE。
+layout: 图形的布局。默认为circular（圆形布局）。
+rotation: 图形的旋转角度。默认为0。
+edge.label.cex: 边标签的大小。默认为1。
+edge.label.offset: 边标签的偏移。默认为0。
+edge.label: 是否显示边标签。默认为TRUE。
+edge.color: 边的颜色。默认为黑色。
+edge.width: 边的宽度。默认为1。
+edge.lwd: 边的线宽。默认为1。
+edge.curved: 边的曲率。默认为FALSE。
+edge.lty: 边的线型。默认为1。
+label.prop: 是否根据参数大小调整节点标签的大小。默认为FALSE。
+label.cex: 节点标签的大小。默认为1。
+label.offset: 节点标签的偏移。默认为0.5。
+node.color: 节点的颜色。默认为黑色。
+node.width: 节点的宽度。默认为0.3。
+node.size: 节点的大小。默认为2。
+curvePivot: 弯曲箭头的位置。默认为0.5。
+curveAngle: 弯曲箭头的角度。默认为60。
+curveArrowSize: 弯曲箭头的大小。默认为0.5。
+'
+```
+
+```{r}
+library(lavaan)
+
+set.seed(123) # 设置随机种子以便结果可复现  
+n <- 100 # 样本量  
+  
+# 创建潜在变量  
+eta1 <- rnorm(n) # 潜在变量1  
+eta2 <- rnorm(n) # 潜在变量2  
+  
+# 创建观测变量  
+x1 <- eta1 + rnorm(n) # x1是eta1的指标  
+x2 <- eta1 + rnorm(n) # x2也是eta1的指标  
+y <- eta2 + rnorm(n)  # y是eta2的指标  
+  
+# 将数据整合到数据框中  
+data <- data.frame(x1, x2, y)
+
+# 定义SEM模型  
+model <- '  
+  # 测量模型  
+  eta1 =~ x1 + x2  
+  eta2 =~ y  
+'
+#在这个模型中，eta1 =~ x1 + x2表示eta1是由x1和x2测量的潜在变量，而eta2 =~ y表示eta2是由y测量的潜在变量。sem()函数用于拟合模型，而summary(fit)则显示模型的摘要信息，包括参数估计、标准误、置信区间和拟合指数等。
+
+# 拟合模型  
+fit <- sem(model, data = data)  
+  
+# 显示摘要信息  
+summary(fit)
+```
+### 多层SEM模型
+### ESEM 探索性结构方程模型，Exploratory Structural Equation Modeling
+是一种相对较新的方法，用于探索性的数据分析。这种方法结合了探索性因素分析（EFA）和验证性因素分析（CFA）的思想，同时融合了结构方程模型（SEM）的灵活性，旨在同时实现理论的探索与验证。
+### CFA
+
+##其它
+###图形
+https://plotly.com/r/
